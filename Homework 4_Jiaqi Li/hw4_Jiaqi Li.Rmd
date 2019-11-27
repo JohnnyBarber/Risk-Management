@@ -1,0 +1,164 @@
+---
+title: "risk hw 4"
+author: "Jiaqi Li"
+date: "May 6, 2019"
+output: pdf_document
+---
+#Problem 1
+
+#Question 1
+```{r}
+library(data.table)
+library(ggplot2)
+library(dplyr)
+options(digits = 8, warn = -1)
+
+####################################################################
+#                           Question 1                             #
+####################################################################
+data = read.csv("hw3_return.csv") %>% as.data.table()
+data[,Date := as.Date(as.character(Date),format="%m/%d/%Y")]
+data[,lag_ret := shift(Return)]
+data = na.omit(data)
+data[,volatilty := sd(lag_ret)]
+
+data[,`:=`(Year = as.integer(format(Date,"%Y")), Month = as.integer(format(Date,"%m")))]
+setkey(data,Year)
+lambda = 0.94
+sigma0 = sd(data[.(2014)]$Return)
+Sample = data[.(2015:2017)]
+volatility = c(sigma0)
+for(i in 1:length(Sample$Return)){
+  volatility[i+1] = sqrt(lambda*volatility[i]^2+(1-lambda)*Sample$lag_ret[i]^2)
+}
+n = Sample$Return
+Sample[,estimate := volatility[-length(n)]]
+Sample[,VaR := -(qnorm(0.01,0,1)*estimate)]
+
+qplot(Date,Return,data = Sample, geom = "line", color = I("steelblue"),
+      main = "Return(blue) volatility(yellow) VaR(red)") +
+  theme_bw() + geom_line(aes(y=-VaR),color = "firebrick") +
+  geom_line(aes(y=estimate),color="darkorange")
+
+exceptions = sum((-Sample$VaR)>Sample$Return)
+print(paste("exceptions:",exceptions,sep = " "))
+```
+The corresponding VaR is shown above.
+$\\$
+There are 20 exceptions for this model.
+$\\$
+
+#Question 2
+```{r}
+####################################################################
+#                           Question 2                             #
+####################################################################
+garch=function(w,a,b,eps){
+  l=length(eps)
+  sigma_2=c(w/(1-a-b))
+  for (i in 1:l){
+    sigma_2[i+1]=w+a*eps[i]^2+b*sigma_2[i]
+  }
+  return (sigma_2)
+}
+
+loglike=function(vP,eps=data[.(2015:2017)]$Return){
+  w=vP[1]; a=vP[2]; b=vP[3]
+  sigma_2=garch(w,a,b,eps)
+  logL=-sum(-log(sigma_2)-(eps^2)/sigma_2)
+  return (logL)
+}
+
+vP0=c(0.2,0.5,0.4)
+coeff = optim(fn=loglike,par=vP0)$par
+
+sigma = sqrt(garch(coeff[1],coeff[2],coeff[3],data[.(2015:2017)]$Return))
+GARCH_VaR = -(qnorm(0.01,0,1)*sigma)
+qplot(Date,Return,data = Sample, geom = "line",color = I("steelblue"),
+      main = "Return(blue) volatility(yellow) VaR(red)")+
+  geom_line(aes(y=-GARCH_VaR[-length(GARCH_VaR)]),color = "firebrick")+
+  geom_line(aes(y=sigma[-length(sigma)]),color = "darkorange")+theme_bw()
+
+exceptions = sum((-GARCH_VaR[-length(GARCH_VaR)])>Sample$Return)
+print(paste("exceptions:",exceptions,sep = " "))
+```
+The corresponding VaR is shown above.
+$\\$
+There are 17 exceptions for this model.
+$\\$
+
+#Question 3
+```{r}
+####################################################################
+#                           Question 3                             #
+####################################################################
+Sample[,vol := sd(Return),by=list(Year,Month)]
+Sample[,norm_ret := Return/vol]
+hist(Sample$norm_ret)
+
+setorder(Sample,norm_ret)
+Sample[,loss := -norm_ret]
+Sample[,Rank := .I]
+Sample[,`:=` (Prob = Rank/length(Sample$Date))]
+test = Sample[loss > 0,]
+lm.out = lm(log(Prob)~log(loss), data = test)
+psy = -1/coef(lm.out)[2]
+plot(log(test$loss),log(test$Prob),type="o",xlim=c(-1.0,1.3))
+
+loglike_Pareto = function(para){
+  beta = para[1]
+  psy = para[2]
+  loss = -Sample$norm_ret
+  u = quantile(loss,0.95)
+  v = loss[loss>u]
+  logsum = -sum(log((1+psy*(v-u)/beta)^(-1/psy-1)/beta))
+  return(logsum)
+}
+
+coeff = optim(fn = loglike_Pareto, par = c(0.8,0.9))$par
+
+loss = -Sample$norm_ret
+u = quantile(loss,0.95)
+N = length(Sample$norm_ret)
+Nu = sum(loss>=u)
+VaR_Pareto = (((N/Nu)*0.01)^(-coeff[2])-1)*coeff[1]/coeff[2]+u
+a = quantile(loss,0.99,type=1)
+
+print(paste("Generalized Pareto distribution estimates: beta =",coeff[1],
+            "xi =", coeff[2]))
+print(paste("Last day VaR:",VaR_Pareto,sep=" "))
+print(paste("Loss at 99% quantile:",a,sep=" "))
+```
+The left tail of these normalized returns looks linear, which suggests that the left tail of the normalized returns follows a power law.
+$\\$
+The coefficients of generalized Pareto distribution are: beta = 0.785, xi = -0.2596.
+$\\$
+Using these estimates, the last date VaR is 2.743.
+$\\$
+
+#Question 4
+Based on the previous questions, we get 20 exceptions for using EWMA model and 17 exceptions for using GARCH model. Such result shows that using GARCH model to predict volatility and get VaR is better. 
+$\\$
+Last time, we proposed to use exponential measure on normalized return to compute VaR. However, we find that the left tail of the normalized returns actually follow the Power Law. Thus, I would propose to consider using generalized Pareto distribution to compute the VaR of the normalized returns.
+$\\$
+
+#Problem 2
+
+#Question 1
+The core strategy of LTCM is described as "relative-value", or "convergence-arbitrage" trades, which seeds to take advantage of small differences in prices among closely related securities.
+$\\$
+
+#Question 2
+Because such trading strategy generates very small profits, the leverage has to be high in order to get attractive returns. Also, the target ceiling risk level was set to the volatility of an unleveraged position and the positions were obtained by an optimization with a constraint on volatility.
+$\\$
+
+#Question 3
+This strategy creates very high leverage and extreme sensitivity to instability in the correlation, which eventually led the firm to its demies. The demies starts at the time when Russia announced that its was "restructuring" its bond payments, which led to reassessment of credit and sovereign risks across all financial markets. Such change brings huge impact on global market and credit spreads, risk premia, and liquidity spreads jumped up sharply. As the volatility continued increasing and LTCM could not find new investors to raise money, the firm lost tons of capital and finally went to demise.
+$\\$
+
+#Question 4
+In terms of risk management, the LTCM makes the wrong assumption in assuming a constant volatility. Also, the firm had the wrong decision in selling out liquid assets based on their low profitability. When estimating risk, LTCM relied too much on recent historical data and underestimated the probability of extreme events. Due to the enormous size of its positions, LTCM could not cut its risk exposure fast enough. As the markets continued to slide, it become clear that the LTCM had grossly underestimated its capital needs. In addition, LTCM's portfolio is not diversified enough, which exposes the firm to liquidity, credit and volatility spreads risks.
+$\\$
+
+#Question 5
+First, I will choose a fairly diversified portfolio to avoid liquidity, credit and volatility spreads risks as much as possible. Second, when estimating VaR, I should carefully choose the confidence level and the horizon such that I will choose very high confidence interval so that the probability of exceeding VaR is very low, and I will choose more liquid assets so that I would have enough reaction time to raise additional fund.

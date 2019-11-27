@@ -1,0 +1,178 @@
+---
+title: "Risk Homework 5"
+author: "Jiaqi Li"
+date: "May 21, 2019"
+output: pdf_document
+---
+
+##3.
+```{r}
+library(pbivnorm)
+library(dplyr)
+#------------------------------------3---------------------------------------#
+Greeks = function(S1,S2,K,r,sigma1,sigma2,tau,rho){
+  gamma1 = (log(S1/K)+(r-0.5*sigma1^2)*tau)/(sigma1*sqrt(tau))
+  gamma2 = (log(S2/K)+(r-0.5*sigma2^2)*tau)/(sigma2*sqrt(tau))
+  sigma = sqrt(sigma1^2+sigma2^2-2*rho*sigma1*sigma2)
+  a1 = gamma1+sigma1*sqrt(tau)
+  b1 = (log(S2/S1)-0.5*sigma^2*tau)/(sigma*sqrt(tau))
+  theta1 = (rho*sigma2-sigma1)/sigma
+  a2 = gamma2+sigma2*sqrt(tau)
+  b2 = (log(S1/S2)-0.5*sigma^2*tau)/(sigma*sqrt(tau))
+  theta2 = (rho*sigma1-sigma2)/sigma
+  out = as.data.frame(matrix(c(a1,a2,b1,b2,theta1,theta2,gamma1,gamma2),
+                             nrow = 2, ncol = 4, byrow = F))
+  names(out) = c("alpha","beta","theta","gamma")
+  return(out)
+}
+
+
+OptionPrice = function(r,S1_0,S2_0,sigma1,sigma2,K,rho,tau,mu1,mu2){
+  
+  ABTG = Greeks(S1_0,S2_0,K,r,sigma1,sigma2,tau,rho)
+  
+  N2_sig1 = pbivnorm(ABTG[1,1],ABTG[1,2],rho = ABTG[1,3])
+  N2_sig2 = pbivnorm(ABTG[2,1],ABTG[2,2],rho = ABTG[2,3])
+  N2_gam = pbivnorm(ABTG[1,4],ABTG[2,4],rho = 0.4)
+  
+  M = S1_0*N2_sig1+S2_0*N2_sig2-K*exp(-r*tau)*N2_gam
+  return(M)
+}
+
+r = 0.00005*252; S1_0 = 99; S2_0 = 101; sigma1 = sigma2 = 0.02*sqrt(252)
+K = 100; rho = 0.4; tau = 0.5; mu1 = mu2 = 0.0003*252
+
+M = OptionPrice(r,S1_0,S2_0,sigma1,sigma2,K,rho,tau,mu1,mu2)
+M
+```
+The option price is about 3.843442 based on the formula.$\\$
+$\\$
+
+##4.
+```{r}
+#------------------------------------4---------------------------------------#
+dS1 = 99.01; dS2 = 101.01; dS3 = 99-0.01; dS4 = 101-0.01
+
+M_dS1 = OptionPrice(r,dS1,S2_0,sigma1,sigma2,K,rho,tau,mu1,mu2)
+M_dS2 = OptionPrice(r,S1_0,dS2,sigma1,sigma2,K,rho,tau,mu1,mu2)
+M_dS3 = OptionPrice(r,dS3,S2_0,sigma1,sigma2,K,rho,tau,mu1,mu2)
+M_dS4 = OptionPrice(r,S1_0,dS4,sigma1,sigma2,K,rho,tau,mu1,mu2)
+M_pp = OptionPrice(r,dS1,dS2,sigma1,sigma2,K,rho,tau,mu1,mu2)
+
+delta1 = (M_dS1-M)/0.01
+delta2 = (M_dS2-M)/0.01
+
+gamma1 = (M_dS1-2*M+M_dS3)/0.01^2
+gamma2 = (M_dS2-2*M+M_dS4)/0.01^2
+gamma12 = (M_pp-M_dS1-M_dS2+M)/0.01^2
+
+#delta approach
+VaR_delta = (-(delta1*mu1/252*S1_0+delta2*mu2/252*S2_0)+
+  qnorm(0.99,0,1)*sqrt((delta1*sigma1/sqrt(252)*S1_0)^2+
+                         (delta2*sigma2/sqrt(252)*S2_0)^2+
+                         2*delta1*delta2*rho*sigma1*sigma2/252*S1_0*S2_0))/M
+
+#delta-gamma approach
+VaR_delta_gamma = (-(delta1*mu1/252*S1_0+delta2*mu2/252*S2_0+
+          0.5*gamma1*sigma1^2/252*S1_0^2+0.5*gamma2*sigma2^2/252*S2_0^2+
+          gamma12*sigma1*sigma2/252*S1_0*S2_0*rho)+
+  qnorm(0.99,0,1)*sqrt((delta1*sigma1/sqrt(252)*S1_0)^2+(delta2*sigma2/sqrt(252)*S2_0)^2+
+                     2*delta1*delta2*sigma1*sigma2/252*S1_0*S2_0*rho))/M
+
+VaR_delta
+VaR_delta_gamma
+```
+Delta approach shows VaR (of option return) is 0.3205544$\\$
+Delta-Gamma approach shows VaR (of option return) is 0.3171675$\\$
+We can see that the VaR by the delta-gamma appraoch is smaller than the VaR by the delta approach. That is because when we have a positive gamma, the curvature of the return curve of the delta-gamma hedge strategy will have smaller loss than the delta hedge strategy. Thus, the 99% 1-day VaR of delta-gamma approach is smaller than that of the delta approach.$\\$
+$\\$
+
+##5.
+```{r}
+#------------------------------------5---------------------------------------#
+StockPrice = function(S1_0,S2_0,r,sd1,sd2,mu1,mu2,rho,Time,paths,steps){
+  dt = Time/steps
+  Z = rnorm(paths*steps*2,0,1)
+  Z1 = Z[1:(steps*paths)] %>% matrix(nrow = paths, ncol = steps) %>% as.data.frame()
+  Z2 = Z[(paths*steps+1):(2*steps*paths)] %>% matrix(nrow = paths, ncol = steps) %>% as.data.frame()
+  dW1t = sd1*Z1
+  dW2t = sd2*rho*Z1+sd2*sqrt(1-rho^2)*Z2
+  S1t = matrix(0,nrow = paths, ncol = steps+1)
+  S2t = matrix(0,nrow = paths, ncol = steps+1)
+  S1t[,1] = S1_0
+  S2t[,1] = S2_0
+  for(i in 1:steps){
+    S1t[,i+1] = S1t[,i]*exp((mu1-0.5*sd1^2)*dt+dW1t[,i]*sqrt(dt))
+    S2t[,i+1] = S2t[,i]*exp((mu2-0.5*sd2^2)*dt+dW2t[,i]*sqrt(dt))
+  }
+  return(list(S1 = S1t, S2 = S2t))
+}
+
+r = 0.00005*252; S1_0 = 99; S2_0 = 101; sigma1 = sigma2 = 0.02*sqrt(252)
+K = 100; rho = 0.4; tau = 0.5; mu1 = mu2 = 0.0003*252
+steps = as.integer(252/2); paths = 1000
+
+set.seed(1234)
+
+test1 = StockPrice(S1_0,S2_0,r,sigma1,sigma2,mu1,mu2,rho,tau,paths,steps)[[1]]
+test2 = StockPrice(S1_0,S2_0,r,sigma1,sigma2,mu1,mu2,rho,tau,paths,steps)[[2]]
+Price0 = cbind(test1[,steps+1],test2[,steps+1])
+
+Min_stock0 = apply(Price0,1,min)
+temp0 = cbind(Min_stock0-K,0)
+option_Mt0 = apply(temp0,1,max)*exp(-r*tau)
+Mt0 = mean(option_Mt0)
+
+Mt1 = c()
+for(i in 1:1000){
+  test3 = StockPrice(test1[,2][i],test2[,2][i],r,sigma1,sigma2,mu1,mu2,rho,tau-tau/steps,paths,steps-1)[[1]]
+  test4 = StockPrice(test1[,2][i],test2[,2][i],r,sigma1,sigma2,mu1,mu2,rho,tau-tau/steps,paths,steps-1)[[2]]
+  Price1 = cbind(test3[,steps],test4[,steps])
+  Min_stock1 = apply(Price1,1,min)
+  temp1 = cbind(Min_stock1-K,0)
+  option_Mt1 = apply(temp1,1,max)*exp(-r*(tau-tau/steps))
+  Mt1[i] = mean(option_Mt1)
+}
+
+VaR_sim = -quantile((Mt1-Mt0)/Mt0,0.01)
+
+print(paste0("By simulation, VaR is around ",VaR_sim))
+```
+This result gives a VaR (of option return) that is different (most of the time smaller) than the previous VaR. This is because when we do simulations we are actually taking everyting into consideration. However, when we use delta approach or delta-gamma approach, we only compute the first and the second dereivative of price change (delta and gamma) without considering other greeks such as theta, vega, etc., which does not capture the loss well enough as the simulation does. Therefore, the simulation gives a different (most of the time smaller) VaR than delta and the delta-gamma approach.$\\$
+$\\$
+
+##6.
+I would also worry about the model risk. When calculating VaR, we assmue that the option returns (or the option prices) are normally distributed. However, that may not be true. The distribution of the option returns (or the option prices) could be positive or negative skewed and it could also have excess kurtosis. This will largely increase the tail risk, which our VaR model does not capture. Quantitatively speaking, VaR does not capture the distribution of losses below the threshold, which means any 2 distribution with same $F^{-1}(1-c)$ will have the same VaR. thus, if I had to worry about just one more risk, I will worry about this model risk.$\\$
+$\\$
+
+
+#Interview Questions
+##1.
+Given that the two options have the same delta, if we are longing the options, the option with the higher gamma should have lower loss due to the curvature of the return curves, and thus have lower VaR. The VaR could be expressed as the following:
+$$-(\Delta\mu S_tdt+1/2\Gamma\sigma^2S_t^2dt)+\Phi^{-1}(1-c)\sigma S_t\sqrt{dt}$$  
+On the other hand, if we are shorting the options, the option with the higher gamma should have higher VaR.$\\$
+$\\$
+
+
+##2.
+Given that EUR/USD exchange rate is $X$ with $dX_t = \mu X_t dt + \sigma dW_t$. $\\$
+Then, USD/EUR is $\frac{1}{X_t}$. $\\$
+Apply Ito's Lemma to $\frac{1}{X_t}$: $\\$
+$\frac{\partial (\frac{1}{X_t})}{\partial t} = 0$,
+$\frac{\partial (\frac{1}{X_t})}{\partial X_t} = -\frac{1}{X_t^2}$,
+$\frac{\partial^2 (\frac{1}{X_t})}{\partial X_t^2} = \frac{2}{X_t^3}$
+$\\$
+$$d(\frac{1}{X}) = 0dt - \frac{1}{X^2}dX_t + \frac{1}{2}\frac{2}{X_t^3}dX_t^2$$
+$\\$
+$$d(\frac{1}{X}) = -\frac{1}{X^2}(\mu X_t dt + \sigma dW_t) + \frac{1}{X_t^3}(\mu X_t dt + \sigma dW_t)^2$$
+$\\$
+$$d(\frac{1}{X}) = \frac{1}{X}[(-\mu+\sigma^2)dt-\sigma dW_t]$$
+$\\$
+$$\frac{d(\frac{1}{X})}{\frac{1}{X}} = (-\mu+\sigma^2)dt-\sigma dW_t$$
+$\\$
+Thus, USD/EUR exchange rate has drift $-\mu+\sigma^2$ and volatility $\sigma$. $\\$
+$\\$
+
+##3.
+Initially, we have delta hedged the our position, which means we have short delta amount of IBM stocks since we have longed a call option on IBM stocks. $\\$
+Now, the IBM stock price falls by $10. Based on the payoff of a call option, the delta of the call option should decrease. This means that if we want to hedge our new position, we will short less amount of IBM stocks than we originally did based on smaller delta. Thus, we need to **buy stock and borrow** to reduce our short position on IBM stocks.

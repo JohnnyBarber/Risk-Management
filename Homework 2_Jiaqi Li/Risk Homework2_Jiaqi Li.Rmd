@@ -1,0 +1,163 @@
+---
+title: "Risk Homework2_Jiaqi Li"
+author: "Jiaqi Li"
+date: "April 15, 2019"
+output: pdf_document
+---
+
+#Problem 1
+##question 1
+The Citigroup used the C-VaR to model the credit risk of the conduit's assets. The data the Citigroup used are from multiple resources include independent agencies and Citigroup's own information collected from the market. The method that the Citigroup used to compute VaR is to run Monte Carlo simulation and get the distribution of credit risk for the portfolios. Then, Citi applied probability-weighted basis on the portfolios to compute expected losses. Citi keeps monitor the credit characteristics of the conduit's asset and the credit enviroment to make sure that their C-VaR model is still working and producing useful information for the company to analyze the expected credit risk of the conduit's assets. In addition, Citigroup used 2-year sample to test their exceptions. In 2008, there are about 7-8 exceptions.
+
+
+
+##question 2
+```{r}
+library(quantmod)
+getSymbols(Symbols = "C",from = "2006-01-01",
+           to = "2008-12-31", src = "yahoo")
+```
+
+##part (a)
+```{r}
+#-------------------------------part a-----------------------------#
+library(ggplot2)
+library(data.table)
+C = as.data.table(C)
+
+compute_VaR = function(C){
+  n = length(C)
+  PRC = as.data.frame(C)[,n]
+  C = cbind(C,PRC)
+  C[,Year := format(index,"%Y")]
+  setkey(C,Year)
+  
+  C[, price_shift := shift(PRC)]
+  C[, RET := PRC/price_shift-1]
+  C = C[-1,]
+  C[, Mean := sum(C$RET[1:.I])/.I]
+  quant = c()
+  for(i in 1:length(C$RET)){
+    quant[i] = quantile(C$RET[1:i],0.01)
+  }
+  C = cbind(C,quant)
+  C[, VaR := -(Mean + quant)]
+  return(C)
+}
+
+C = compute_VaR(C)
+
+qplot(C[.("2008")]$index,C[.("2008")]$VaR, geom = "line",
+      xlab = "date", ylab = "VaR", main = "Plot of VaR") + theme_bw()
+```
+
+##part (b)
+```{r}
+#-------------------------------part b-----------------------------#
+qplot(C[.("2008")]$index,C[.("2008")]$RET, geom = "line",
+      xlab = "date", ylab = "VaR", main = "Plot of Backtest") +
+  theme_bw() + geom_line(aes(y=-C[.("2008")]$VaR),color = "red")
+
+C[, YesNoMaybe := ifelse(RET < -VaR, 1, 0)]
+Exceed = sum(C[.("2008")]$YesNoMaybe)
+setkey(C,Year)
+n = length(C[.("2008")]$index)
+Prob_exceed = Exceed/n
+Exceed
+```
+Based on the plot and the exceptions, we can say that this model does not work every well.
+
+
+##part (c)
+ The Citigroup reported only 7-8 exceptions during 2008 by using their Model. I think the reason is that we used all the historial data instead of the most recent 1 year or 2 years data, which is what Citigroup did. The model may work better if we can add more weight on the recent data.
+
+
+##question 2
+
+##part (a)
+```{r}
+Bank = c("GS","UBS","JPM","BCS","DB","BAC","BNP.PA","CS","MS")
+for(i in Bank){
+  getSymbols(Symbols = i, from = "2006-01-01",
+             to = "2008-12-31", src = "yahoo")
+}
+MS = as.data.table(MS)
+CS = as.data.table(CS)
+DB = as.data.table(DB)
+GS = as.data.table(GS)
+GS = as.data.table(GS)
+JPM = as.data.table(JPM)
+UBS = as.data.table(UBS)
+BAC = as.data.table(BAC)
+BCS = as.data.table(BCS)
+BNP.PA = as.data.table(BNP.PA)
+
+#-------------------------------part a-----------------------------#
+MS = compute_VaR(MS)
+CS = compute_VaR(CS)
+DB = compute_VaR(DB)
+GS = compute_VaR(GS)
+JPM = compute_VaR(JPM)
+UBS = compute_VaR(UBS)
+BAC = compute_VaR(BAC)
+BCS = compute_VaR(BCS)
+BNP.PA = compute_VaR(BNP.PA)
+
+MS_M = MS[,VaR_m := 2000000*VaR]
+CS_M = CS[,VaR_m := 2000000*VaR]
+DB_M = DB[,VaR_m := 1000000*VaR]
+GS_M = GS[,VaR_m := 1000000*VaR]
+JPM_M = JPM[,VaR_m := 1000000*VaR]
+UBS_M = UBS[,VaR_m := 2000000*VaR]
+BAC_M = BAC[,VaR_m := 2000000*VaR]
+BCS_M = BCS[,VaR_m := 1000000*VaR]
+BNP.PA_M = BNP.PA[,VaR_m := 1000000*VaR]
+C_M = C[,VaR_m := 2000000*VaR]
+
+MS = MS[,list(date = index,RET_MS = RET)]
+CS = CS[,list(date = index,RET_CS = RET)]
+DB = DB[,list(date = index,RET_DB = RET)]
+GS = GS[,list(date = index,RET_GS = RET)]
+JPM = JPM[,list(date = index,RET_JPM = RET)]
+UBS = UBS[,list(date = index,RET_UBS = RET)]
+BAC = BAC[,list(date = index,RET_BAC = RET)]
+BCS = BCS[,list(date = index,RET_BCS = RET)]
+BNP.PA = BNP.PA[,list(date = index,RET_BNP.PA = RET)]
+C = C[,list(date = index,RET_C = RET)]
+
+setkey(MS,date); setkey(BNP.PA,date);setkey(CS,date); setkey(DB,date)
+setkey(GS,date); setkey(JPM,date); setkey(UBS,date); setkey(BAC,date)
+setkey(BCS,date); setkey(C,date)
+Portfolio = merge(MS,BNP.PA,all = T)
+Portfolio = merge(Portfolio,CS,all = T)
+Portfolio = merge(Portfolio,DB,all = T)
+Portfolio = merge(Portfolio,GS,all = T)
+Portfolio = merge(Portfolio,JPM,all = T)
+Portfolio = merge(Portfolio,UBS,all = T)
+Portfolio = merge(Portfolio,BAC,all = T)
+Portfolio = merge(Portfolio,BCS,all = T)
+Portfolio = merge(Portfolio,C,all = T)
+Portfolio = na.omit(Portfolio)
+temp_p = as.matrix(Portfolio[,-1])
+
+library(xts)
+temp = as.xts(Portfolio)
+weights = as.matrix(rep(c(1/15,2/15),5))
+VaR_p = -(mean(temp_p %*% weights)+quantile(temp_p %*% weights,0.01))*15
+print(VaR_p)
+```
+
+##part b
+```{r}
+library(PortfolioAnalytics)
+DVaR = VaR(temp,p = 0.99,sigma = cov(temp),portfolio_method = "marginal",weights = weights)
+CVaR = VaR(temp,p = 0.99,sigma = cov(temp),portfolio_method = "component",weights = weights)
+DVaR
+CVaR$contribution
+```
+
+##part c
+DVaR for an asset in the portfolio is the change in VaR caused by an $1 increment in that asset.
+CVaR means the change in portfolio VaR caused by an 1% increase in position of that asset.
+For DVaR, the highest is Morgan Stanley and the smallest is BNP
+For CVaR, the highest is Citigroup and the smallest is UBS.

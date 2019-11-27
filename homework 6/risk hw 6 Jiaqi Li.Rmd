@@ -1,0 +1,229 @@
+---
+title: "Risk Management HW7"
+author: "Jiaqi Li"
+date: "June 6, 2019"
+output: pdf_document
+---
+
+##Q1.1
+$\text{       }$ The JP Morgan Chase makes statement to clarify the new Basel II framework such that the goal of the new Basel II Framework is to provide more risk-sensitive regulatory capital calculations and promote enhanced risk management practices among large, internationally active banking organizations and they suggests that they will be in compliance with all relevant Basel II rules at the holding company level.$\\$
+$\text{       }$ Under the risk management sector of the annual report, JP Morgan Chase claims that the Risk Working Group is chaired by the Firm's Chief Risk Officer and meets monthly to review issues that cross lines of business such as risk policy, risk methodology, Basel II and other regulatory issues, and such other topics referred to it by line-of-business risk committees or the Firm's Chief Risk Officer.$\\$
+$\text{       }$ JP Morgan Chase explains many kinds of risks they managed, and they indicate that most of the regulation JP Morgan Chase was in compliance with are rules in Basel I in 2009 and they will eventually be in compliance with the new Basel II framework. In terms of the new Basel II framework, they mentioned that for their operational risk capital, the operational risk capital model is based on actual losses and potential scenario-based stress losses, with adjustments to the capital calculation to reflect changes in the quality of the control environment or the use of risk-transfer products. The Firm believes its model is consistent with the new Basel II Framework. Specifically, JP Morgan Chase claims that their operational risk is measured for each business on the basis of historical loss experience using a statistically based loss-distribution approach. The current business environment, potential stress scenarios and measures of the control environment are then factored into the statistical measure in determining the Firmwide operational risk capital. This methodology is designed to comply with the advanced measurement rules under the new Basel II Framework. $\\$
+$\text{       }$ For risk-based capital ratio, the risk-based capital ratio is determined by allocating assets and specified off-balance sheet financial instruments into risk weighted categories, with higher levels of capital being required for the categories perceived as representing greater risk. Under the guidelines, capital is divided into two tiers: Tier 1 capital and Tier 2 capital. The amount of Tier 2 capital may not exceed the amount of Tier 1 capital. Total capital is the sum of Tier 1 capital and Tier 2 capital. Under the guidelines, banking organizations are required to maintain a total capital ratio (total capital to risk-weighted assets) of 8% and a Tier 1 capital ratio of 4%. $\\$
+$\text{       }$ For minimum leverage ratio guidelines, the leverage ratio is defined as Tier 1 capital divided by adjusted average total assets. The minimum leverage ratio is 3% for bank holding companies that are considered "strong" under Federal Reserve Board guidelines or which have implemented the Federal Reserve Board's risk-based capital measure for market risk. Other bank holding companies must have a minimum leverage ratio of 4%. Bank holding companies may be expected to maintain ratios well above the minimum levels, depending upon their particular condition, risk profile and growth plans.$\\$
+$\pagebreak$
+
+##Q2.1
+```{r}
+suppressMessages(library(knitr))
+suppressMessages(library(data.table))
+suppressMessages(library(expm))
+suppressMessages(library(dplyr))
+
+####################################################################
+#                           Question 2                             #
+####################################################################
+#------------------------------part1-------------------------------#
+R = 0.6
+CDS3 = 0.005
+lamb1 = CDS3/(1-R)
+
+CDS5 = 0.006
+cal_lamb2 = function(x,lamb1,CDS5,R){
+  left = (exp(-3*lamb1)*(1-exp(-2*x))/x+(1-exp(-3*lamb1))/lamb1)*CDS5/(1-R)
+  right = 1-exp(-2*x-3*lamb1)
+  return(left-right)
+}
+
+lamb2 = uniroot(cal_lamb2, lamb1=lamb1,CDS5=CDS5,R=R,interval = c(-1,1))$root
+
+CDS10 = 0.01
+cal_lamb3 = function(x,lamb1,lamb2,CDS10,R){
+  left = ((1-exp(-3*lamb1))/lamb1+exp(-3*lamb1+3*lamb2)*(exp(-3*lamb2)-exp(-5*lamb2))/lamb2+exp(-3*lamb1-2*lamb2+5*x)*(exp(-5*x)-exp(-10*x))/x)*CDS10/(1-R)
+  right = 1 - exp(-3*lamb1-2*lamb2-5*x)
+  return(left-right)
+}
+
+lamb3 = uniroot(cal_lamb3,lamb1 = lamb1, lamb2 = lamb2, CDS10 = CDS10, R = R, interval = c(-1,1))$root
+
+lambda = c(lamb1,lamb2,lamb3)
+
+kable(t(lambda),col.names=c("0-3","3-5","5-10"),caption="Lambdas")
+```
+
+##Q2.2
+```{r}
+#------------------------------part2-------------------------------#
+c = 0.03*100
+survive = c()
+cond_default = c()
+#no default at all
+for(i in 1:(2*6)){
+  if(i <= 3*2){
+    survive[i] = exp(-i*0.5*lamb1)
+  }else if(i > 3*2 & i <= 5*2){
+    survive[i] = exp(-3*lamb1-0.5*(i-6)*lamb2)
+  }else if(i > 5*2 & i <= 6*2){
+    survive[i] = exp(-3*lamb1 - 2*lamb2 - 0.5*(i-10)*lamb3)
+  }
+}
+
+PV = data.table(cf = c(rep(3,11),103))
+PV[, time := (.I)*0.5]
+PV = cbind(PV,survive)
+PV[, default := 1-survive]
+PV[, cond_default := default-shift(default)]
+PV[1,"cond_default"] = PV[1,"default"]
+PV[, default_pv := R*100+((.I)-1)*c]
+PV[, pv := cond_default*default_pv]
+PV_bond = sum(PV[,"pv"])+sum(PV[,"cf"])*PV[12,"survive"]
+PV_bond$survive
+```
+Bond price is 130.0887 $\\$
+
+
+##Q3.1
+```{r}
+####################################################################
+#                           Question 3                             #
+####################################################################
+#------------------------------part1-------------------------------#
+#P(0)
+P_0<-diag(8)
+rownames(P_0)<-c("AAA","AA","A","BBB","BB","B","CCC","Default")
+colnames(P_0)<-c("AAA","AA","A","BBB","BB","B","CCC","Default")
+kable(P_0,caption = "P(0)")
+
+#P(1)
+P_1<-matrix(0,nrow=8,ncol=8)
+P_1[1,]=c(90.81, 8.33, 0.68, 0.06, 0.12, 0, 0, 0)
+P_1[2,]=c(0.7, 90.65, 7.79, 0.64, 0.06, 0.14, 0.02, 0)
+P_1[3,]=c(0.09, 2.27, 91.05, 5.52, 0.74, 0.26, 0.01, 0.06)
+P_1[4,]=c(0.02, 0.33, 5.95, 86.93, 5.3, 1.17, 1.12, 0.18)
+P_1[5,]=c(0.03, 0.14, 0.67, 7.73, 80.53, 8.84, 1, 1.06)
+P_1[6,]=c(0, 0.11, 0.24, 0.43, 6.48, 83.46, 4.07, 5.2)
+P_1[7,]=c(0.22, 0, 0.22, 1.3, 2.38, 11.24, 64.86, 19.79)
+P_1[8,]=c(0,0,0,0,0,0,0,100)
+rownames(P_1)<-c("AAA","AA","A","BBB","BB","B","CCC","Default")
+colnames(P_1)<-c("AAA","AA","A","BBB","BB","B","CCC","Default")
+kable(P_1,caption = "P(1)")
+```
+
+##3.2
+Since $\Lambda$ is the contains all the probability of moving from any rating to another rating in $dt$, we can simply get $P(t+dt) = P(t) \times \Lambda$ based on the property of Markov Chain (P(t+dt) only depends on P(t) and has no relationship with any previous P other than P(t)). $\\$
+
+$$P(t+dt) = P(t)\Lambda dt$$
+$$P(t)^{-1} P(t+dt) = \Lambda dt $$
+$$P(t)^(-1) (P(t)+dP(t)) = \Lambda dt $$
+$$I + P(t)^{-1}dP(t) = \Lambda dt $$
+$$(I + P(t)^{-1}dP(t))\frac{1}{dt} = \Lambda$$
+
+
+##3.3
+$$\Lambda = I+P(0)^{-1}dP(1) \\$$
+$$\Lambda = I+I^{-1}(P(1)-P(0)) \\$$
+$$\Lambda = I+I^{-1}(P(1)-I) = P(1)$$
+
+
+##3.4
+Based on previous question, we know
+$\Lambda = P(1) \text{ and we know } P(1) \text{ therefore } \Lambda =$
+```{R}
+P_1 = P_1/100
+kable(P_1)
+```
+
+
+##3.5
+```{r}
+time = c(1,2,3,4,5,7,10)
+default = c()
+for(i in time){
+  temp = P_1 %^% i
+  default = cbind(default,temp[,"Default"])
+}
+kable(default[-8,]*100,col.names = c("1 year(%)","2 years(%)","3 years(%)","4 years(%)","5 years(%)","7 years(%)","10 years(%)"))
+```
+
+
+##3.6
+```{r}
+moodys = matrix(c(0.000,0.022,0.062,0.174,1.110,3.904,15.894,
+                  0.013,0.068,0.199,0.504,3.071,9.274,27.003,
+                  0.013,0.136,0.434,0.906,5.371,14.723,35.800,
+                  0.037,0.260,0.679,1.373,7.839,19.509,42.796,
+                  0.104,0.410,0.958,1.862,10.065,23.869,48.828,
+                  0.241,0.682,1.615,2.872,13.911,31.774,56.878,
+                  0.489,1.017,2.759,4.632,19.323,40.560,66.212),nrow = 7, ncol = 7)
+rownames(moodys) = c("Aaa","Aa","A","Baa","Ba","B","Caa")
+kable(moodys,col.names = c("1 year(%)","2 years(%)","3 years(%)","4 years(%)","5 years(%)","7 years(%)","10 years(%)"))
+```
+
+
+Compare with Moody's historical default probability, the default probability computed by using Markov Chain is slightly larger. $\\$
+
+
+##3.7
+```{r}
+M = data.table(coupon = c(rep(3,11),103))
+M[,time := 0.5*(.I)]
+Q = default["BBB",]
+lambda = -(log(1-Q)-log(shift(1-Q)))
+lambda[1] = -log(1-Q[1])
+lambda = lambda/c(1,1,1,1,1,2,3)
+
+survive = c()
+#no default at all
+for(i in 1:(2*6)){
+  if(i <= 1*2){
+    survive[i] = exp(-i*0.5*lambda[1])
+  }else if(i > 1*2 & i <= 2*2){
+    survive[i] = exp(-lambda[1]-0.5*(i-2)*lambda[2])
+  }else if(i > 2*2 & i <= 3*2){
+    survive[i] = exp(-lambda[1] - lambda[2] - 0.5*(i-4)*lambda[3])
+  }else if(i > 3*2 & i <= 4*2){
+    survive[i] = exp(-lambda[1] - lambda[2] - lambda[3] - 0.5*(i-6)*lambda[4])
+  }else if(i > 4*2 & i <= 5*2){
+    survive[i] = exp(-lambda[1] - lambda[2] - lambda[3] - lambda[4] - 0.5*(i-8)*lambda[5])
+  }else if(i > 5*2){
+    survive[i] = exp(-lambda[1] - lambda[2] - lambda[3] - lambda[4] - lambda[5] - 0.5*(i-10)*lambda[6])
+  }
+}
+M[, survive := survive]
+M[, default := 1-survive]
+M[, cond_default := default - shift(default)]
+M[1,"cond_default"] = M[1,"default"]
+M[, default_pv := R*100+((.I)-1)*c]
+M[, pv := cond_default*default_pv]
+bond_price = sum(M[,"pv"])+sum(M[,"coupon"])*M[12,"survive"]
+bond_price$survive
+```
+
+
+##3.8
+```{r}
+BBB = default["BBB",]
+lambda3_bar = -log(1-BBB[3])/3
+lambda5_bar = -log(1-BBB[5])/5
+lambda10_bar = -log(1-BBB[7])/10
+CDS3_bar = lambda3_bar*(1-R)
+CDS5_bar = lambda5_bar*(1-R)
+CDS10_bar = lambda10_bar*(1-R)
+CDS = round(c(CDS3_bar,CDS5_bar,CDS10_bar)*10000,2)
+kable(t(CDS),col.names = c("3 years","5 years","10 years"),caption = "CDS spread in basis point")
+```
+
+
+##4.1
+The statement is true. If an option has positive Gamma on its payoff curve, the Delta approoch will generate a larger VaR because of the curvature of the curve. Thus, the Delta approach for a positive Gamma will overestimate the VaR.$\\$
+
+
+##4.2
+**(a)** Under Basel I: $\\$
+All corporate bonds are treated as 100% risky assets because Basel I doesn't have standard rule for collateral. With that in mind, we can take on more risk without changing the requirement of the capital by investing in low-rating corporate bonds. We can do the same with assets of the other categories. Also, with the approach of netting, we are able to lower our amount of risky asset. Then, we can make transactions with same counterparty to lower our risk-weighted assets.
+
+**(b)** Basel II uses one-factor Gaussian copula model to calculate 99.9% VaR for credit risk. As it's using VaR, we can take on more tail-risk, such as selling out-of-money put options. Also, we can reduce the copula correlation $\rho$ between assets to have lower risk-weighted assets
+
+
+##4.3
+Basel II requires less amount of risk-weighted assets than Basel I does. This actually makes the liquidity a big concern under Basel II and it accelerates the financial crisis since banks hold less capital against the crisis. Also, banks underestimate extreme loss since they are using their own models to estimate credit risk in compliance to Basel II. They did not take stressed VaR into consideration.
